@@ -1,6 +1,6 @@
 """Display, scaling, viewport and fullscreen management for MazeQuest."""
 from __future__ import annotations
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 import pygame
 
 IW: int = 640
@@ -12,8 +12,13 @@ DEFAULT_WINDOW_HEIGHT: int = 880
 class DisplayManager:
     """Manages the window, fullscreen transitions, and aspect-correct letterboxing."""
 
-    def __init__(self, fullscreen: bool = False, window_size: Tuple[int, int] = (DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)) -> None:
+    def __init__(self, fullscreen: bool = False, window_size: Tuple[int, int] = (DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT),
+                 scale_mode: str = "integer") -> None:
         self.is_fullscreen = fullscreen
+        # "integer": whole-number nearest scale (sharpest pixels); "fit": nearest, fills the
+        # window; "smooth": fills the window with bilinear filtering (least pixelated).
+        self.scale_mode = scale_mode if scale_mode in ("integer", "fit", "smooth") else "integer"
+        self._buffer: Optional[pygame.Surface] = None
         self.window_size = window_size
         self.screen: Optional[pygame.Surface] = None
         self.viewport_rect = pygame.Rect(0, 0, IW, IH)
@@ -64,23 +69,38 @@ class DisplayManager:
             return self.toggle_fullscreen()
         return self.is_fullscreen
 
+    def set_scale_mode(self, mode: str) -> None:
+        self.scale_mode = mode if mode in ("integer", "fit", "smooth") else "integer"
+        self.update_viewport()
+
     def handle_resize(self, new_size: Tuple[int, int]) -> None:
-        if not self.is_fullscreen:
-            w = max(IW // 2, new_size[0])
-            h = max(IH // 2, new_size[1])
-            self.window_size = (w, h)
+        if self.is_fullscreen:
+            return
+        w = max(IW // 2, new_size[0])
+        h = max(IH // 2, new_size[1])
+        self.window_size = (w, h)
+        # SDL2 already resized the window surface; only re-create it when the
+        # requested size differs (e.g. the minimum clamp), to avoid flicker.
+        current = pygame.display.get_surface()
+        if current is not None and current.get_size() == (w, h):
+            self.screen = current
+        else:
             self.screen = pygame.display.set_mode((w, h), pygame.RESIZABLE)
-            self.update_viewport()
+        self.update_viewport()
 
     def update_viewport(self) -> None:
         if not self.screen:
             return
         w, h = self.screen.get_size()
-        # Pixel art must be enlarged by whole pixels. Fractional scaling makes
-        # adjacent source pixels have different widths and reads as blur.
-        scale = max(1, int(min(w / IW, h / IH)))
-        vw = IW * scale
-        vh = IH * scale
+        # Integer mode enlarges by whole pixels (fractional scaling gives adjacent
+        # source pixels different widths); fit mode fills the window instead.
+        raw = min(w / IW, h / IH)
+        if self.scale_mode in ("fit", "smooth"):
+            scale = max(0.1, raw)
+            vw, vh = max(1, int(IW * scale)), max(1, int(IH * scale))
+        else:
+            scale = max(1, int(raw))
+            vw, vh = IW * scale, IH * scale
         vx = (w - vw) // 2
         vy = (h - vh) // 2
         self.viewport_rect = pygame.Rect(vx, vy, vw, vh)
@@ -97,8 +117,8 @@ class DisplayManager:
         iy = int((pos[1] - vy) * IH / vh)
         return (max(0, min(IW - 1, ix)), max(0, min(IH - 1, iy)))
 
-    def present(self, canvas: pygame.Surface) -> None:
-        """Scale and blit the internal pixel canvas to the display with aspect-correct letterboxing."""
+    def present(self, canvas: pygame.Surface, overlay: Optional[Callable[[pygame.Surface, float], None]] = None) -> None:
+        """Scale the world canvas to the viewport, draw the hi-res UI ``overlay`` on it, and show it."""
         if not self.screen:
             return
         w, h = self.screen.get_size()
@@ -108,8 +128,21 @@ class DisplayManager:
         if vx > 0 or vy > 0 or vw < w or vh < h:
             self.screen.fill((7, 9, 13))
 
-        scaled = pygame.transform.scale(canvas, (vw, vh))
-        self.screen.blit(scaled, (vx, vy))
+        # Reuse one destination buffer rather than allocating every frame.
+        if self._buffer is None or self._buffer.get_size() != (vw, vh):
+            self._buffer = pygame.Surface((vw, vh))
+            if pygame.display.get_surface():
+                self._buffer = self._buffer.convert()
+        if self.scale_mode == "smooth":
+            try:
+                pygame.transform.smoothscale(canvas, (vw, vh), self._buffer)
+            except ValueError:
+                pygame.transform.scale(canvas, (vw, vh), self._buffer)
+        else:
+            pygame.transform.scale(canvas, (vw, vh), self._buffer)
+        if overlay is not None:
+            overlay(self._buffer, vw / IW)
+        self.screen.blit(self._buffer, (vx, vy))
 
         # Delicate bezel rim around game frame if letterboxed
         if vx > 0 or vy > 0:

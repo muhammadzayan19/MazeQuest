@@ -9,8 +9,9 @@ import numpy as np
 class SoundManager:
     """Generates and plays retro dark-fantasy sound effects procedurally."""
 
-    def __init__(self, enabled: bool = True) -> None:
+    def __init__(self, enabled: bool = True, volume: float = 0.7) -> None:
         self.enabled = enabled
+        self.volume = max(0.0, min(1.0, volume))
         self._available = False
         self.click_snd: Optional[pygame.mixer.Sound] = None
         self.step_snd: Optional[pygame.mixer.Sound] = None
@@ -76,6 +77,7 @@ class SoundManager:
         snd = getattr(self, f"{sound_name}_snd", None)
         if snd:
             try:
+                snd.set_volume(self.volume)
                 snd.play()
             except Exception:
                 pass

@@ -21,3 +21,17 @@ Thumbs.db
 # Local game data
 savegame.json
 highscores.json
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Test and temp output
+*.log
+*.tmp
+.env
+screenshots/
+*.png
+!assets/**/*.png
+htmlcov/
+.coverage.*
+coverage.xml
