@@ -20,15 +20,12 @@ class TestDisplayAndLetterboxing(unittest.TestCase):
         dm.screen = pygame.Surface((1920, 1080))
         dm.update_viewport()
 
-        # In 1920x1080:
-        # scale = min(1920 / 640, 1080 / 440) = min(3.0, 2.4545) = 2.4545...
-        # vh = int(440 * scale) = 1080
-        # vw = int(640 * scale) = 1570
-        # Pillarbox on left and right: vx = (1920 - 1570) // 2 = 175
-        self.assertEqual(dm.viewport_rect.height, 1080)
+        # Pixel-perfect rendering uses the largest whole-number scale that fits.
+        self.assertEqual(dm.scale, 2)
+        self.assertEqual(dm.viewport_rect.size, (IW * 2, IH * 2))
         self.assertAlmostEqual(dm.viewport_rect.width / dm.viewport_rect.height, IW / IH, delta=0.01)
         self.assertGreater(dm.viewport_rect.x, 0)
-        self.assertEqual(dm.viewport_rect.y, 0)
+        self.assertGreater(dm.viewport_rect.y, 0)
 
         # Coordinate mapping inside viewport
         mid_screen = (dm.viewport_rect.centerx, dm.viewport_rect.centery)
@@ -45,13 +42,10 @@ class TestDisplayAndLetterboxing(unittest.TestCase):
         dm.screen = pygame.Surface((1024, 768))
         dm.update_viewport()
 
-        # In 1024x768:
-        # scale = min(1024 / 640, 768 / 440) = min(1.6, 1.7454) = 1.6
-        # vw = 1024, vh = int(440 * 1.6) = 704
-        # Letterbox on top and bottom: vy = (768 - 704) // 2 = 32
-        self.assertEqual(dm.viewport_rect.width, 1024)
+        self.assertEqual(dm.scale, 1)
+        self.assertEqual(dm.viewport_rect.size, (IW, IH))
         self.assertAlmostEqual(dm.viewport_rect.width / dm.viewport_rect.height, IW / IH, delta=0.01)
-        self.assertEqual(dm.viewport_rect.x, 0)
+        self.assertGreater(dm.viewport_rect.x, 0)
         self.assertGreater(dm.viewport_rect.y, 0)
 
         # Top margin click

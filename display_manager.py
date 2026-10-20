@@ -5,8 +5,8 @@ import pygame
 
 IW: int = 640
 IH: int = 440
-DEFAULT_WINDOW_WIDTH: int = 1100
-DEFAULT_WINDOW_HEIGHT: int = 760
+DEFAULT_WINDOW_WIDTH: int = 1280
+DEFAULT_WINDOW_HEIGHT: int = 880
 
 
 class DisplayManager:
@@ -76,13 +76,15 @@ class DisplayManager:
         if not self.screen:
             return
         w, h = self.screen.get_size()
-        scale = min(w / IW, h / IH)
-        vw = max(1, int(IW * scale))
-        vh = max(1, int(IH * scale))
+        # Pixel art must be enlarged by whole pixels. Fractional scaling makes
+        # adjacent source pixels have different widths and reads as blur.
+        scale = max(1, int(min(w / IW, h / IH)))
+        vw = IW * scale
+        vh = IH * scale
         vx = (w - vw) // 2
         vy = (h - vh) // 2
         self.viewport_rect = pygame.Rect(vx, vy, vw, vh)
-        self.scale = scale
+        self.scale = float(scale)
 
     def screen_to_internal(self, pos: Tuple[int, int]) -> Tuple[int, int]:
         """Convert window screen coordinates to internal canvas (IW, IH) coordinates."""

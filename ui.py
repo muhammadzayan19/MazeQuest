@@ -40,7 +40,10 @@ class UI:
         self.screen = screen
         self.display_mgr = display_mgr
         self.sound_mgr = sound_mgr or SoundManager()
-        self.canvas = pygame.Surface((IW, IH)).convert()
+        # Tests and screenshot tooling may construct UI before opening a
+        # display; avoid requiring a display pixel format in that case.
+        canvas = pygame.Surface((IW, IH))
+        self.canvas = canvas.convert() if pygame.display.get_surface() else canvas
         self.sprites = SpriteCache(tile_w=18, tile_h=16)
         self.particles = ParticleSystem(max_particles=120)
 
@@ -71,7 +74,11 @@ class UI:
     def _init_fonts(self) -> None:
         """Initialize compact, crisp fonts with system fallbacks."""
         pygame.font.init()
-        font_names = ["liberationsans", "dejavusans", "notosans", "cantarell", "arial"]
+        # Monospace faces keep counters aligned and read closer to a classic
+        # pixel-game UI when rendered without antialiasing at the low canvas
+        # resolution.
+        font_names = ["dejavusansmono", "liberationmono", "monospace",
+                      "liberationsans", "dejavusans", "notosans", "cantarell", "arial"]
         chosen = None
         for name in font_names:
             if name in pygame.font.get_fonts():
@@ -131,6 +138,25 @@ class UI:
         if subtitle:
             self.text(subtitle, (rect.centerx, rect.y + 40), self.small, MUTED, center=True)
 
+    def draw_stone_frame(self, rect: pygame.Rect, fill: Tuple[int, int, int] = PANEL_BG,
+                         accent: Tuple[int, int, int] = PANEL_BORDER) -> None:
+        """Draw a compact pixel-stone frame with a readable inset bevel."""
+        pygame.draw.rect(self.canvas, (8, 11, 16), rect)
+        inner = rect.inflate(-2, -2)
+        pygame.draw.rect(self.canvas, fill, inner)
+        pygame.draw.line(self.canvas, (112, 119, 130),
+                         (rect.x + 3, rect.y + 2), (rect.right - 4, rect.y + 2))
+        pygame.draw.line(self.canvas, (56, 63, 75),
+                         (rect.x + 2, rect.y + 3), (rect.x + 2, rect.bottom - 4))
+        pygame.draw.line(self.canvas, (11, 14, 20),
+                         (rect.x + 3, rect.bottom - 3), (rect.right - 3, rect.bottom - 3))
+        pygame.draw.line(self.canvas, accent,
+                         (rect.x + 4, rect.y + 1), (rect.right - 5, rect.y + 1))
+        pygame.draw.rect(self.canvas, accent, rect, 1)
+        for x, y in ((rect.x, rect.y), (rect.right - 3, rect.y),
+                     (rect.x, rect.bottom - 3), (rect.right - 3, rect.bottom - 3)):
+            pygame.draw.rect(self.canvas, C_GOLD_HI, (x, y, 3, 3))
+
     def draw_button(self, rect: pygame.Rect, label: str, active: bool = False,
                     hover: bool = False, hotkey: str = "", small: bool = False) -> None:
         """Render a gothic stone button with beveled edges and glow feedback."""
@@ -162,7 +188,8 @@ class UI:
         else:
             scaled = pygame.transform.scale(self.canvas, self.screen.get_size())
             self.screen.blit(scaled, (0, 0))
-            pygame.display.flip()
+            if pygame.display.get_surface():
+                pygame.display.flip()
         self.tick += 1
 
     # -------------------------------------------------------------------------
@@ -173,7 +200,7 @@ class UI:
         dt = max(0.001, min(0.1, now - self.last_time))
         self.last_time = now
 
-        self.canvas.fill((9, 12, 17))
+        self.canvas.fill((7, 9, 14))
 
         # Atmospheric crypt backdrop with stone arches and flagstones
         pygame.draw.rect(self.canvas, (18, 22, 30), (0, 160, IW, IH - 160))
@@ -202,14 +229,17 @@ class UI:
         self.particles.update(dt)
         self.particles.draw(self.canvas)
 
-        # Grand Title Banner
+        # Grand title on a carved stone plaque.
         title_y = 38
+        title_rect = pygame.Rect(IW // 2 - 174, 28, 348, 91)
+        self.draw_stone_frame(title_rect, (14, 18, 25), (113, 82, 39))
+        self.text("MAZEQUEST", (IW // 2 + 2, title_y + 2), self.huge, (66, 46, 25), center=True)
         self.text("MAZEQUEST", (IW // 2, title_y), self.huge, (245, 205, 110), center=True)
-        # Decorative subtitle plaque
-        sub_rect = pygame.Rect(IW // 2 - 130, title_y + 26, 260, 20)
-        pygame.draw.rect(self.canvas, (14, 18, 25), sub_rect)
-        pygame.draw.rect(self.canvas, (90, 72, 44), sub_rect, 1)
         self.text("THE FORGOTTEN CATACOMBS", (IW // 2, title_y + 36), self.small_bold, CYAN, center=True)
+        pygame.draw.line(self.canvas, (105, 76, 38), (title_rect.x + 28, 98),
+                         (title_rect.right - 28, 98))
+        self.text("A DUNGEON OF STONE • LIGHT • AND LOST RELICS",
+                  (IW // 2, 108), self.tiny, MUTED, center=True)
 
         # Menu Buttons
         labels = self.MENU_BUTTONS[:]
@@ -218,7 +248,7 @@ class UI:
 
         self.menu_rects = []
         btn_w, btn_h = 240, 32
-        start_y = 150
+        start_y = 145
         gap_y = 39
 
         for i, label in enumerate(labels):
@@ -233,7 +263,7 @@ class UI:
             self.draw_button(rect, label, active=active, hover=hover)
 
         # Bottom instructions
-        self.text("WASD / ARROWS TO NAVIGATE   •   ENTER TO DESCEND   •   F11 FULLSCREEN",
+        self.text("WASD / ARROWS   •   ENTER TO DESCEND   •   F11 FULLSCREEN",
                   (IW // 2, IH - 22), self.tiny, MUTED, center=True)
         self.present()
 
@@ -569,22 +599,23 @@ class UI:
         """Render the upper and lower retro RPG HUD panels."""
         # Top Header Bar
         top_h = 42
-        pygame.draw.rect(self.canvas, PANEL_BG, (0, 0, IW, top_h))
-        pygame.draw.line(self.canvas, PANEL_BORDER, (0, top_h - 1), (IW, top_h - 1))
+        self.draw_stone_frame(pygame.Rect(8, 6, IW - 16, top_h - 8),
+                              (17, 21, 28), (96, 73, 40))
 
         # Title / Level Name
-        self.text("THE FORGOTTEN CATACOMBS", (16, 12), self.small_bold, GOLD)
-        self.text("LEVEL 1", (16, 26), self.tiny, MUTED)
+        self.text("THE FORGOTTEN CATACOMBS", (18, 10), self.small_bold, GOLD)
+        self.text("LEVEL 1  /  SANCTUM ROUTE", (18, 25), self.tiny, MUTED)
 
         # Elapsed Timer (Hourglass icon)
-        self.canvas.blit(self.sprites.icons["hourglass"], (220, 11))
+        self.canvas.blit(self.sprites.icons["hourglass"], (235, 11))
         m = int(game.elapsed // 60)
         s = int(game.elapsed % 60)
-        self.text(f"TIME  {m:02d}:{s:02d}", (242, 14), self.small_bold, INK)
+        time_color = GOLD if game.remaining < 30 else INK
+        self.text(f"TIME  {m:02d}:{s:02d}", (257, 14), self.small_bold, time_color)
 
         # Move Counter (Boot icon)
-        self.canvas.blit(self.sprites.icons["boot"], (380, 11))
-        self.text(f"MOVES  {game.stats.moves:03d}", (402, 14), self.small_bold, INK)
+        self.canvas.blit(self.sprites.icons["boot"], (390, 11))
+        self.text(f"MOVES  {game.stats.moves:03d}", (412, 14), self.small_bold, INK)
 
         # Pause Button
         pause_hover = self.pause_btn_rect.collidepoint(mouse) if mouse else False
@@ -596,26 +627,25 @@ class UI:
         # Bottom Footer Bar
         bot_h = 42
         bot_y = IH - bot_h
-        pygame.draw.rect(self.canvas, PANEL_BG, (0, bot_y, IW, bot_h))
-        pygame.draw.line(self.canvas, PANEL_BORDER, (0, bot_y), (IW, bot_y))
+        self.draw_stone_frame(pygame.Rect(8, bot_y + 3, IW - 16, bot_h - 7),
+                              (17, 21, 28), (96, 73, 40))
 
         # Key Status
         has_key = bool(game.keys)
         key_icon = self.sprites.icons["key_found"] if has_key else self.sprites.icons["key_missing"]
-        self.canvas.blit(key_icon, (14, bot_y + 11))
+        self.canvas.blit(key_icon, (18, bot_y + 11))
         key_label = "KEY ACQUIRED" if has_key else "KEY MISSING"
-        self.text(key_label, (36, bot_y + 14), self.tiny, GOLD if has_key else MUTED)
+        self.text(key_label, (40, bot_y + 14), self.tiny, GOLD if has_key else MUTED)
 
         # Relic / Treasure Count
-        self.canvas.blit(self.sprites.icons["relic"], (155, bot_y + 11))
-        self.text(f"RELICS {game.stats.treasures}/2", (177, bot_y + 14), self.tiny, (110, 230, 160) if game.stats.treasures == 2 else INK)
+        self.canvas.blit(self.sprites.icons["relic"], (168, bot_y + 11))
+        self.text(f"RELICS {game.stats.treasures}/2", (190, bot_y + 14), self.tiny, (110, 230, 160) if game.stats.treasures == 2 else INK)
 
         # Narrative Message Ticker
         msg = game.current_message
         msg_col = CYAN if ("key" in msg.lower() or "gate" in msg.lower()) else INK
-        msg_rect = pygame.Rect(280, bot_y + 8, 275, 26)
-        pygame.draw.rect(self.canvas, (12, 16, 22), msg_rect)
-        pygame.draw.rect(self.canvas, (35, 42, 52), msg_rect, 1)
+        msg_rect = pygame.Rect(300, bot_y + 8, 240, 26)
+        self.draw_stone_frame(msg_rect, (12, 16, 22), (35, 52, 62))
         self.text(msg, (msg_rect.centerx, msg_rect.centery), self.tiny, msg_col, center=True)
 
         # Hint Button

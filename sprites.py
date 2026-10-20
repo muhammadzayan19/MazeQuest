@@ -9,18 +9,18 @@ import numpy as np
 # Palette Constants
 C_VOID = (9, 12, 17)
 C_MORTAR = (20, 23, 29)
-C_STONE_DARK = (54, 58, 66)
-C_STONE_MID = (64, 70, 78)
-C_STONE_HI = (86, 93, 105)
-C_STONE_RIM = (100, 110, 124)
+C_STONE_DARK = (47, 53, 63)
+C_STONE_MID = (63, 71, 82)
+C_STONE_HI = (96, 106, 120)
+C_STONE_RIM = (116, 126, 140)
 
 C_WALL_TOP_SHAD = (20, 24, 31)
-C_WALL_TOP = (33, 39, 48)
-C_WALL_TOP_HI = (55, 65, 78)
+C_WALL_TOP = (38, 46, 57)
+C_WALL_TOP_HI = (72, 84, 100)
 
-C_WALL_FRONT_BASE = (27, 32, 40)
-C_WALL_FRONT_HI = (44, 52, 64)
-C_WALL_FRONT_SHAD = (24, 28, 34)
+C_WALL_FRONT_BASE = (22, 27, 35)
+C_WALL_FRONT_HI = (53, 64, 78)
+C_WALL_FRONT_SHAD = (15, 19, 26)
 
 C_GOLD_DARK = (105, 65, 20)
 C_GOLD_MID = (195, 125, 35)
@@ -96,6 +96,8 @@ class SpriteCache:
         for var in range(6):
             t = pygame.Surface((tw, th))
             t.fill(C_STONE_DARK)
+            # A narrow dark seam separates walkable slabs from raised walls.
+            pygame.draw.rect(t, (28, 33, 41), (0, 0, tw, th), 1)
             if var == 0:
                 # Two large offset flagstones
                 pygame.draw.line(t, C_MORTAR, (0, 7), (tw-1, 7))
