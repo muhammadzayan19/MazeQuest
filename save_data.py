@@ -14,7 +14,7 @@ def default_config_path() -> Path:
 
 
 def empty_state() -> Dict[str, Any]:
-    return {"version": VERSION, "settings": {"sound": True, "show_hints": True},
+    return {"version": VERSION, "settings": {"sound": True, "show_hints": True, "fullscreen": False},
             "current": None, "history": [], "personal_bests": {}}
 
 
