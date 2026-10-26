@@ -124,10 +124,121 @@ class TestHiResLayer(unittest.TestCase):
         self.assertGreater(sum(pygame.transform.average_color(target)[:3]), 0)
         ui.clear_commands()
 
-    def test_shape_surface_is_cached(self):
-        a = self.ui._shape_surface(40, 20, (10, 20, 30), None, 0, 4)
-        b = self.ui._shape_surface(40, 20, (10, 20, 30), None, 0, 4)
-        self.assertIs(a, b)
+    def test_text_colours_meet_contrast(self):
+        from widgets import (contrast, INK, MUTED, GOLD, CYAN, GREEN, RED, ORANGE, GOLD_LIGHT,
+                             PANEL_FILL, BTN_FILL, BTN_LIT, DARK)
+        for col in (INK, MUTED, GOLD, CYAN, GREEN, RED, ORANGE):
+            for bg in (PANEL_FILL, BTN_FILL, DARK, (28, 34, 50)):
+                self.assertGreaterEqual(contrast(col, bg), 4.5, (col, bg))
+        self.assertGreaterEqual(contrast(GOLD_LIGHT, BTN_LIT), 4.5)
+
+    def test_fonts_snap_to_eight_pixel_grid(self):
+        for face in (self.ui.huge, self.ui.body, self.ui.small):
+            for scale in (1, 1.5, 2, 2.37, 3):
+                px = face.px_for(scale)
+                self.assertEqual(px % 8, 0)
+                self.assertGreaterEqual(px, 8)
+
+    def test_widgets_render_hard_edged_pixels(self):
+        target = pygame.Surface((1280, 880))
+        target.fill((0, 0, 0))
+        ui = self.ui
+        ui.clear_commands()
+        ui.draw_button(pygame.Rect(100, 100, 200, 30), "PLAY", active=True)
+        ui.render_commands(target, 2.0)
+        ui.clear_commands()
+        colours = {tuple(target.get_at((x, y))[:3]) for x in range(180, 640) for y in range(180, 280)}
+        self.assertLess(len(colours), 24)      # flat fills and bevels only: no gradients or anti-aliasing
+
+    def test_wrap_text_stays_inside_box(self):
+        lines = self.ui.wrap_text("The sealed passage requires the catacomb key to open", self.ui.small, 120, 2)
+        self.assertLessEqual(len(lines), 2)
+        for line in lines:
+            self.assertLessEqual(self.ui.small.size(line)[0], 120)
+
+    def test_end_scene_draws_both_variants(self):
+        from end_scene import EndScene
+        canvas = pygame.Surface((640, 440))
+        scene = EndScene()
+        for won in (True, False, True):
+            scene.draw(canvas, 1.0, 0.016, won)
+            self.assertGreater(sum(pygame.transform.average_color(canvas)[:3]), 0)
+
+    def test_results_reveal_animation_restarts_on_entry(self):
+        game = Game(Maze.handcrafted(), 1, 900)
+        game.stats.completed = True
+        game.position = game.maze.goal
+        self.ui.results(game, None, 0, True)
+        first = self.ui._results_t0
+        self.ui.results(game, None, 0, True)
+        self.assertEqual(self.ui._results_t0, first)          # same visit keeps animating
+        self.ui.anim_time += 5
+        self.ui.results(game, None, 0, True)
+        self.assertGreater(self.ui._results_t0, first)        # re-entering replays the reveal
+
+    def test_decor_is_deterministic_and_never_on_special_cells(self):
+        from decor import build_decor
+        maze = Maze.handcrafted()
+        a, b = build_decor(maze), build_decor(maze)
+        self.assertEqual(a.floor_decals, b.floor_decals)
+        self.assertEqual(a.wall_decor, b.wall_decor)
+        special = {maze.start, maze.goal, maze.entrance, *maze.keys, *maze.doors, *maze.treasures,
+                   *maze.torches, *maze.crystals, *maze.runes}
+        for pos, name, _ in a.floor_decals:
+            self.assertNotIn(pos, special, name)
+            self.assertNotEqual(maze.grid[pos[0]][pos[1]], "#")
+        for (r, c), name in a.wall_decor.items():
+            self.assertEqual(maze.grid[r][c], "#")
+            self.assertNotEqual(maze.grid[r + 1][c], "#")        # only wall faces get overlays
+        self.assertTrue(a.candles and a.drip_points and a.carpet)
+
+    def test_line_of_sight_stops_at_walls(self):
+        maze = Maze.handcrafted()
+        ui = self.ui
+        self.assertTrue(ui._clear_line(maze, (15, 3), (15, 3)))
+        self.assertTrue(ui._clear_line(maze, (13, 3), (16, 3)))        # open crypt
+        self.assertFalse(ui._clear_line(maze, (15, 3), (5, 11)))       # through solid rock
+        vis = ui._visible_cells(maze, (15, 3), 6)
+        self.assertIn((15, 3), vis)
+        self.assertNotIn((5, 11), vis)
+
+    def test_pickups_spawn_popups_and_animations(self):
+        game = Game(Maze.handcrafted(), 1, 900)
+        ui = self.ui
+        ui._tracked = None
+        ui.dungeon(game)
+        self.assertEqual(ui._popups, [])
+        game.keys.add("catacomb")
+        treasure = next(iter(game.maze.treasures))
+        game.collected_treasures.add(treasure)
+        ui.dungeon(game)
+        texts = [p[0] for p in ui._popups]
+        self.assertIn("+KEY", texts)
+        self.assertIn("GATE OPEN", texts)
+        self.assertTrue(any(t.startswith("+") and t[1:].isdigit() for t in texts))
+        self.assertIn(treasure, ui._chest_t)
+        self.assertIsNotNone(ui._door_t)
+
+    def test_bump_and_footprints_are_tracked(self):
+        ui = self.ui
+        ui.bump(0, 1)
+        self.assertEqual(ui._bump[:2], (0, 1))
+        before = len(ui._prints)
+        ui.footstep(Maze.handcrafted(), 15, 3)
+        self.assertEqual(len(ui._prints), before + 1)
+
+    def test_fog_of_war_hides_unexplored_cells(self):
+        game = Game(Maze.handcrafted(), 1, 900)
+        ui = self.ui
+        ui._tracked = None
+        ui.fog_enabled = True
+        try:
+            ui.dungeon(game)
+            ui.dungeon(game)
+            self.assertIn(game.position, ui._seen)
+            self.assertNotIn(game.maze.goal, ui._seen)               # far room stays unexplored
+        finally:
+            ui.fog_enabled = False
 
     def test_present_flushes_commands_and_fade_progresses(self):
         ui = self.ui

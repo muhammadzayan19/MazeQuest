@@ -9,7 +9,7 @@ from display_manager import DisplayManager
 from sound import SoundManager
 from ui import UI, FPS, HINT_COOLDOWN
 
-SETTINGS_ROWS = ["DISPLAY MODE", "SCALING", "SOUND EFFECTS", "VOLUME", "SHOW HINTS", "BACK TO MENU"]
+SETTINGS_ROWS = ["DISPLAY MODE", "SCALING", "SOUND EFFECTS", "VOLUME", "SHOW HINTS", "FOG OF WAR", "BACK TO MENU"]
 MOVE_KEYS = {
     pygame.K_UP: (-1, 0), pygame.K_w: (-1, 0),
     pygame.K_DOWN: (1, 0), pygame.K_s: (1, 0),
@@ -31,12 +31,12 @@ def run() -> None:
     path = default_config_path()
     state = load_state(path)
     settings = state["settings"]
-    # Earlier builds wrote "integer" as a default, not a choice; prefer smooth until the user picks.
-    if not settings.get("scaling_chosen") and settings.get("scaling", "smooth") == "integer":
-        settings["scaling"] = "smooth"
+    # Pixel theme: crisp integer scaling unless the user explicitly picked SMOOTH.
+    if not settings.get("scaling_chosen"):
+        settings["scaling"] = "integer"
 
     display_mgr = DisplayManager(fullscreen=bool(settings.get("fullscreen", False)),
-                                 scale_mode=settings.get("scaling", "smooth"))
+                                 scale_mode=settings.get("scaling", "integer"))
     screen = display_mgr.init_display()
     sound_mgr = SoundManager(enabled=bool(settings.get("sound", True)),
                              volume=float(settings.get("volume", 0.7)))
@@ -104,6 +104,8 @@ def run() -> None:
         state["history"].append(game.snapshot())
         state["current"] = None
         new_best = False
+        if not game.won:
+            sound_mgr.play("lose")
         if game.won:
             sound_mgr.play("win")
             old = state["personal_bests"].get("1")
@@ -142,6 +144,7 @@ def run() -> None:
             last_save = time.monotonic()
         else:
             sound_mgr.play("bump")
+            ui.bump(dr, dc)
 
     # ----------------------------------------------------- action dispatch
     # Mouse clicks and key presses share these so each screen's logic lives once.
@@ -192,6 +195,9 @@ def run() -> None:
         elif label == "SHOW HINTS":
             settings["show_hints"] = not settings.get("show_hints", True)
             persist()
+        elif label == "FOG OF WAR":
+            settings["fog"] = not settings.get("fog", False)
+            persist()
         elif label == "BACK TO MENU":
             go(previous_mode)
 
@@ -222,6 +228,11 @@ def run() -> None:
             game = None
             go("menu")
 
+    def continue_info() -> str:
+        current = state.get("current") or {}
+        left = max(0, int(LEVELS[0].time_limit - float(current.get("elapsed", 0))))
+        return f"{left // 60:02d}:{left % 60:02d} LEFT"
+
     def menu_entries():
         return ["ENTER THE DUNGEON"] + (["CONTINUE"] if state.get("current") else []) + ["SETTINGS", "STATISTICS", "QUIT"]
 
@@ -231,6 +242,7 @@ def run() -> None:
         raw_mouse = pygame.mouse.get_pos()
         logical_mouse = display_mgr.screen_to_internal(raw_mouse)
         ui.hints_enabled = bool(settings.get("show_hints", True))
+        ui.fog_enabled = bool(settings.get("fog", False))
         ui.hint_cooldown = max(0.0, hint_ready_at - now)
 
         # Mouse movement moves the keyboard selection so only one item is lit.
@@ -321,6 +333,10 @@ def run() -> None:
                     elif key in (pygame.K_RETURN, pygame.K_SPACE):
                         sound_mgr.play("click")
                         menu_action(entries[menu_selected % len(entries)])
+                    elif pygame.K_1 <= key <= pygame.K_9 and key - pygame.K_1 < len(entries):
+                        menu_selected = key - pygame.K_1
+                        sound_mgr.play("click")
+                        menu_action(entries[menu_selected])
                     elif key == pygame.K_ESCAPE:
                         quit_game()
 
@@ -417,7 +433,9 @@ def run() -> None:
             ui.start_fade()
             rendered_mode = mode
         if mode == "menu":
-            ui.menu(menu_selected, bool(state.get("current")), logical_mouse)
+            ui.menu(menu_selected, bool(state.get("current")), logical_mouse,
+                    state["personal_bests"], state["history"],
+                    continue_info() if state.get("current") else "")
         elif mode == "settings":
             ui.settings(settings, settings_selected, logical_mouse)
         elif mode == "statistics":

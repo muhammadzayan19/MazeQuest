@@ -26,18 +26,18 @@ class Particle:
         return self.life > 0
 
     def draw(self, surface: pygame.Surface) -> None:
+        """Square pixel that fades in steps (glowing additive blend, quantised to 4 levels)."""
         if self.life <= 0:
             return
         ratio = max(0.0, min(1.0, self.life / self.max_life))
-        alpha = int(ratio * 255) if self.fade else 255
-        c = self.color
+        if self.fade:
+            level = max(1, math.ceil(ratio * 4)) / 4
+            c = (int(self.color[0] * level), int(self.color[1] * level), int(self.color[2] * level))
+        else:
+            c = self.color
         ix, iy = int(self.x), int(self.y)
         if 0 <= ix < surface.get_width() and 0 <= iy < surface.get_height():
-            if self.size == 1:
-                # Direct pixel set
-                surface.set_at((ix, iy), c)
-            else:
-                pygame.draw.rect(surface, c, (ix, iy, self.size, self.size))
+            surface.fill(c, (ix, iy, self.size, self.size), special_flags=pygame.BLEND_RGB_ADD)
 
 
 class ParticleSystem:

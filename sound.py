@@ -20,6 +20,7 @@ class SoundManager:
         self.unlock_snd: Optional[pygame.mixer.Sound] = None
         self.bump_snd: Optional[pygame.mixer.Sound] = None
         self.win_snd: Optional[pygame.mixer.Sound] = None
+        self.lose_snd: Optional[pygame.mixer.Sound] = None
 
         self._init_mixer()
 
@@ -68,6 +69,8 @@ class SoundManager:
             self.unlock_snd = make_tone([330, 440, 554], 0.4, decay=7.0, wave_type="triangle", volume=0.25)
             # Victory fanfare
             self.win_snd = make_tone([440, 554, 659, 880], 0.6, decay=4.0, volume=0.3)
+            # Defeat: low, falling-feel minor drone
+            self.lose_snd = make_tone([196, 233, 147], 0.8, decay=3.0, wave_type="triangle", volume=0.28)
         except Exception:
             self._available = False
 
